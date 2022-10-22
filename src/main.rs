@@ -1,13 +1,11 @@
 use std::{
-    collections::HashSet,
+    collections::HashMap,
     fs::File,
     io::{self, BufRead, BufReader},
 };
 
 const WORD_LIST_PATH: &'static str = "res/words_alpha.txt";
 const WORD_LENGTH: usize = 5;
-
-const NUM_POSSIBLE_CHARACTER_SETS: usize = 67_108_864;
 
 fn has_repeat(a: u32, b: u32) -> bool {
     a & b != 0
@@ -21,6 +19,8 @@ fn char_to_bit_mask(c: char) -> u32 {
 }
 
 fn main() -> io::Result<()> {
+    pretty_env_logger::init();
+
     let word_file = File::open(WORD_LIST_PATH)?;
     let word_file = BufReader::new(word_file);
 
@@ -45,36 +45,86 @@ fn main() -> io::Result<()> {
             Some((bit_rep, word))
         });
 
-    let mut processed: Vec<Vec<String>> = vec![vec![]; NUM_POSSIBLE_CHARACTER_SETS];
-    let mut populated: HashSet<usize> = HashSet::with_capacity(NUM_POSSIBLE_CHARACTER_SETS);
+    log::info!("Processing word list");
 
-    for (bit_rep, word) in word_list {
-        println!("{:#028b}: {}", bit_rep, word);
+    let word_map: HashMap<u32, Vec<String>> = {
+        let mut map: HashMap<u32, Vec<String>> = HashMap::new();
 
-        let mut added = HashSet::new();
-        for &target in populated
-            .iter()
-            .filter(|&&t| !has_repeat(bit_rep, t as u32))
-        {
-            let new_bit_rep = (bit_rep ^ target as u32) as usize;
-            let mut new_words = processed[target]
-                .iter()
-                .map(|words| format!("{} {}", words, word))
-                .collect::<Vec<_>>();
-
-            processed[new_bit_rep].append(&mut new_words);
-            added.insert(new_bit_rep);
+        for (bit_rep, word) in word_list {
+            if let Some(words) = map.get_mut(&bit_rep) {
+                words.push(word);
+            } else {
+                map.insert(bit_rep, vec![word]);
+            }
         }
 
-        processed[bit_rep as usize].push(word);
-        populated.insert(bit_rep as usize);
-        for &n in &added {
-            populated.insert(n);
+        map
+    };
+
+    let word_map_file = File::create("out/word_map.json")?;
+    serde_json::to_writer(&word_map_file, &word_map)?;
+
+    log::info!("Wrote word map");
+
+    log::info!("Finding results");
+
+    let num_unique_bit_rep = word_map.len();
+
+    log::info!("Total Number of Unique Letter Sets: {}", num_unique_bit_rep);
+
+    let mut processed: HashMap<u32, Vec<Vec<u32>>> = HashMap::new();
+    let mut results: HashMap<u32, Vec<Vec<u32>>> = HashMap::new();
+    let mut num_results = 0;
+
+    for ((&bit_rep, word), i) in word_map.iter().zip(1..=num_unique_bit_rep) {
+        log::debug!(
+            "({} / {}) | {} | {:#028b}: {:?}",
+            i,
+            num_unique_bit_rep,
+            processed.len(),
+            bit_rep,
+            word
+        );
+
+        let prev_keys = processed.keys().map(|&k| k).collect::<Vec<_>>();
+        for other_bit_rep in prev_keys {
+            if !has_repeat(bit_rep, other_bit_rep) {
+                let new_bit_rep = bit_rep | other_bit_rep;
+                let mut new_sets = processed[&other_bit_rep].clone();
+
+                for set in new_sets.iter_mut() {
+                    set.push(bit_rep);
+                }
+
+                if new_sets.first().unwrap().len() == 5 {
+                    log::info!("Found {} more!", new_sets.len());
+                    num_results += new_sets.len();
+
+                    if let Some(sets) = results.get_mut(&new_bit_rep) {
+                        sets.append(&mut new_sets);
+                    } else {
+                        results.insert(new_bit_rep, new_sets);
+                    }
+                } else {
+                    if let Some(sets) = processed.get_mut(&new_bit_rep) {
+                        sets.append(&mut new_sets);
+                    } else {
+                        processed.insert(new_bit_rep, new_sets);
+                    }
+                }
+            }
         }
+
+        processed.insert(bit_rep, vec![vec![bit_rep]]);
     }
 
-    let out_file = File::create("out/output.json")?;
-    serde_json::to_writer(&out_file, &processed)?;
+    log::info!("DONE COMPUTING!");
+    log::info!("Number of results: {}", num_results);
+
+    let results_file = File::create("out/results.json")?;
+    serde_json::to_writer(&results_file, &results)?;
+
+    log::info!("Wrote result to file");
 
     Ok(())
 }
