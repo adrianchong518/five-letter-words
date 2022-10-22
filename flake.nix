@@ -40,7 +40,7 @@
           rustc = rust;
         };
 
-        name = "five_letter_words";
+        name = "five-letter-words";
         src = ./.;
       in
       rec {
