@@ -15,7 +15,7 @@ fn char_to_bit_mask(c: char) -> u32 {
     let mut b = [0];
     c.encode_utf8(&mut b);
 
-    1 << (b[0] - 0x41)
+    1 << (b[0] - 0x61)
 }
 
 fn main() -> io::Result<()> {
@@ -61,16 +61,16 @@ fn main() -> io::Result<()> {
         map
     };
 
+    let num_unique_bit_rep = word_map.len();
+
+    log::info!("Total Number of Unique Letter Sets: {}", num_unique_bit_rep);
+
     let word_map_file = File::create("out/word_map.json")?;
     serde_json::to_writer(&word_map_file, &word_map)?;
 
     log::info!("Wrote word map");
 
     log::info!("Finding results");
-
-    let num_unique_bit_rep = word_map.len();
-
-    log::info!("Total Number of Unique Letter Sets: {}", num_unique_bit_rep);
 
     let mut processed: HashMap<u32, Vec<Vec<u32>>> = HashMap::new();
     let mut results: HashMap<u32, Vec<Vec<u32>>> = HashMap::new();
